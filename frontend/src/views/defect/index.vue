@@ -11,6 +11,8 @@
       </div>
     </header>
 
+    <p v-if="!canWrite" class="role-banner readonly">当前岗位（{{ roleText }}）在本页只读，台账改动请由归属岗位执行。</p>
+
     <div class="stat-row">
       <article v-for="item in stats" :key="item.label" class="stat-card">
         <span class="stat-label">{{ item.label }}</span>
@@ -46,15 +48,18 @@
           <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
           <td>{{ row.status }}</td>
           <td class="row-actions">
-            <button
-              v-for="action in actions"
-              :key="action"
-              class="link"
-              type="button"
-              @click="runAction(action, row)"
-            >
-              {{ action }}
-            </button>
+            <template v-if="canWrite">
+              <button
+                v-for="action in actions"
+                :key="action"
+                class="link"
+                type="button"
+                @click="runAction(action, row)"
+              >
+                {{ action }}
+              </button>
+            </template>
+            <span v-else class="muted-text">只读</span>
           </td>
         </tr>
         <tr v-if="!rows.length">
@@ -79,7 +84,14 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import { canWriteModule, roleLabel } from '@/data/roles'
 import type { EntryRow } from '@/data/types'
+import { useSessionStore } from '@/stores/session'
+
+const store = useSessionStore()
+const role = computed(() => store.role)
+const roleText = computed(() => roleLabel(role.value))
+const canWrite = computed(() => canWriteModule(role.value, meta.key))
 
 const meta = moduleMeta('defect')
 const columns = ["缺陷编号", "设备名称", "缺陷描述", "缺陷等级", "发现日期", "处理期限", "处理人员", "缺陷状态"]
@@ -114,7 +126,7 @@ function openCreate() {
 
 function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
-  const result = applyAction(meta.key, Number(row.id), action)
+  const result = applyAction(meta.key, Number(row.id), action, role.value)
   if (!result.ok) {
     errorMessage.value = result.message
     return

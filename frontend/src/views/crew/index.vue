@@ -11,6 +11,36 @@
       </div>
     </header>
 
+    <section class="todo-block">
+      <h3>待检修待办（导轴承）</h3>
+      <table class="data-table">
+        <thead>
+          <tr><th>轴承编号</th><th>所属机组</th><th>检测日期</th><th>来源</th><th>备注</th><th>操作</th></tr>
+        </thead>
+        <tbody>
+          <tr v-for="item in todos" :key="item.bearingId">
+            <td>{{ item.bearingCode }}</td>
+            <td>{{ item.unit }}</td>
+            <td>{{ item.inspectDate }}</td>
+            <td>{{ sourceText[item.source] }}</td>
+            <td>{{ item.note }}</td>
+            <td>
+              <button v-if="canRepair" class="link" type="button" @click="finishRepair(item.bearingId)">
+                确认检修
+              </button>
+              <span v-else class="muted-text">仅检修岗位可操作</span>
+            </td>
+          </tr>
+          <tr v-if="!todos.length">
+            <td colspan="6" class="empty-state">暂无待检修导轴承，待办与导轴承列表读同一份结论</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="todo-foot">共 {{ todos.length }} 台待检修，备品备件页看到的是同一份清单。</p>
+    </section>
+
+    <p v-if="!canWrite" class="role-banner readonly">当前岗位（{{ roleText }}）在本页只读，人员台账改动请由归属岗位执行。</p>
+
     <div class="stat-row">
       <article v-for="item in stats" :key="item.label" class="stat-card">
         <span class="stat-label">{{ item.label }}</span>
@@ -46,15 +76,18 @@
           <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
           <td>{{ row.status }}</td>
           <td class="row-actions">
-            <button
-              v-for="action in actions"
-              :key="action"
-              class="link"
-              type="button"
-              @click="runAction(action, row)"
-            >
-              {{ action }}
-            </button>
+            <template v-if="canWrite">
+              <button
+                v-for="action in actions"
+                :key="action"
+                class="link"
+                type="button"
+                @click="runAction(action, row)"
+              >
+                {{ action }}
+              </button>
+            </template>
+            <span v-else class="muted-text">只读</span>
           </td>
         </tr>
         <tr v-if="!rows.length">
@@ -79,21 +112,34 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import { confirmBearingRepair, listRepairTodos } from '@/api/bearing-service'
+import { canRunAction, canWriteModule, roleLabel } from '@/data/roles'
+import type { RepairTodo } from '@/api/bearing-service'
 import type { EntryRow } from '@/data/types'
+import { useSessionStore } from '@/stores/session'
 
+const store = useSessionStore()
 const meta = moduleMeta('crew')
-const columns = ["人员编号", "姓名", "岗位", "持证类型", "证书有效期", "所属班组", "联系电话", "在场状态"]
-const actions = ["办理进场", "办理离场", "登记停工"]
-const statuses = ["待进场", "在场", "已离场", "已停工"]
-const stats = [{"label": "在场人员", "value": 0}, {"label": "持证人员", "value": 0}, {"label": "证书即将到期", "value": 0}]
+const columns = ['人员编号', '姓名', '岗位', '持证类型', '证书有效期', '所属班组', '联系电话', '在场状态']
+const actions = ['办理进场', '办理离场', '登记停工']
+const statuses = ['待进场', '在场', '已离场', '已停工']
+const stats = [{ label: '在场人员', value: 0 }, { label: '持证人员', value: 0 }, { label: '证书即将到期', value: 0 }]
+const sourceText = { register: '在册', backfill: '历史回填', action: '标记操作' } as const
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+const todos = ref<RepairTodo[]>([])
+
+const role = computed(() => store.role)
+const roleText = computed(() => roleLabel(role.value))
+const canWrite = computed(() => canWriteModule(role.value, meta.key))
+const canRepair = computed(() => canRunAction(role.value, 'bearing', '确认检修'))
+
 const statusSummary = computed(() =>
-  statuses.map((status: string) => ({
+  statuses.map((status) => ({
     status,
     count: rows.value.filter((row) => String(row.status) === status).length,
   })),
@@ -109,12 +155,22 @@ function exportRows() {
 }
 
 function openCreate() {
-  errorMessage.value = '检修人员登记入口尚未接入审批流'
+  errorMessage.value = '导轴承登记入口尚未接入审批流'
 }
 
 function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
-  const result = applyAction(meta.key, Number(row.id), action)
+  const result = applyAction(meta.key, Number(row.id), action, role.value)
+  if (!result.ok) {
+    errorMessage.value = result.message
+    return
+  }
+  reload()
+}
+
+function finishRepair(id: number) {
+  errorMessage.value = ''
+  const result = confirmBearingRepair(id, role.value, roleText.value)
   if (!result.ok) {
     errorMessage.value = result.message
     return
@@ -128,6 +184,7 @@ function reload() {
     const payload = listEntries(meta.key, filters.value)
     rows.value = payload.items
     total.value = payload.total
+    todos.value = listRepairTodos()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '检修人员列表读取失败'
   }

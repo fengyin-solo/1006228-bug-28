@@ -69,4 +69,20 @@ npm run build
 - 字段、状态、动作与流转目标集中在 `frontend/src/data/modules.ts`；示例数据在
   `frontend/src/data/seed.ts`。
 - 状态流转只允许在 `local-service.ts` 里改，页面组件不做业务判断。
-- 想回到初始数据：清掉浏览器里 `hydropower-plant-om:entries` 这一项，或调用 `resetModule(模块)`。
+- 想回到初始数据：清掉浏览器里 `hydropower-plant-om:entries:v2` 这一项，或调用 `resetModule(模块)`。
+
+## 导轴承批量标记与结论台账
+
+大负荷后导轴承批量标记偏高的对账口径集中在 `frontend/src/api/bearing-service.ts`：
+
+- 勾选多台整组提交，逐台给出**成功 / 重复跳过 / 失败（带原因）**结果；同一次提交里重复勾选、
+  或整批重复提交，同一台只算一次，待检修台数不重复增加。
+- 唯一事实源是 localStorage 里的结论台账（`hydropower-plant-om:bearing-ledger:v1`）。
+  导轴承列表、检修人员页与备品备件页的「待检修待办」、页脚待检修台数、导出 CSV 的对账汇总
+  全部读这一份，明细与汇总同批生成，不会再出现两处对不上。
+- 历史记录按检测日期整体回填（值班管理员执行）：早期只记上导温度、缺下导温度的，
+  下导温度按「未测量」补登，仅按上导温度判定，并在台账与导出里另列说明行。
+  回填逐版留存但不改写已在册的结论，只有最新一版是各入口读取的生效版。
+- 岗位与归属写在 `frontend/src/data/roles.ts`：归属岗位可写、归属之外的岗位越权改动会被
+  服务层拒绝（页面也只读），顶栏可切换岗位验证。
+- 逻辑自测（不依赖浏览器，使用内存 localStorage）：`node frontend/scripts/run-selftest.mjs`。

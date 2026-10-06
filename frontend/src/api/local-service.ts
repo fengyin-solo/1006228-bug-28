@@ -1,4 +1,7 @@
 import { MODULE_BY_KEY } from '@/data/modules'
+import { canRunAction } from '@/data/roles'
+import type { RoleKey } from '@/data/roles'
+import { resetBearingData } from './bearing-service'
 import { allRows, listRows, resetRows, saveRows } from '@/data/local-store'
 import type { ActionResult, EntryRow, ModuleMeta, OverviewResult, PageResult } from '@/data/types'
 
@@ -28,8 +31,12 @@ export function listEntries(key: string, filters: Record<string, string> = {}): 
   return { items: matched, total: matched.length, page: 1, size: matched.length }
 }
 
-export function runAction(key: string, id: number, action: string): ActionResult {
+export function runAction(key: string, id: number, action: string, role: RoleKey): ActionResult {
   const meta = moduleMeta(key)
+  // 归属之外的岗位越权改动一律拒绝；只读岗位任何写操作都不允许。
+  if (!canRunAction(role, key, action)) {
+    return { ok: false, message: `当前岗位无权执行「${action}」，本页只可查看` }
+  }
   const target = meta.actionTargets[action]
   if (!target) {
     return { ok: false, message: `${meta.entity}没有登记「${action}」这个动作` }
@@ -57,6 +64,11 @@ export function runAction(key: string, id: number, action: string): ActionResult
 }
 
 export function resetModule(key: string): PageResult {
+  if (key === 'bearing') {
+    // 导轴承条目与结论台账必须一起重置，否则两边口径又会对不上。
+    resetBearingData()
+    return listEntries(key)
+  }
   resetRows(key)
   return listEntries(key)
 }
